@@ -511,7 +511,30 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
     }
 
     console.log('   Parsing JSON...');
-    const result: GroupingResult = JSON.parse(jsonText);
+    let result: GroupingResult;
+    try {
+      result = JSON.parse(jsonText);
+    } catch (parseErr) {
+      // Try to extract JSON object from response (Claude may include extra text)
+      console.log('   ⚠️  Direct parse failed, attempting JSON extraction...');
+      console.log(`   First 200 chars: ${jsonText.substring(0, 200)}`);
+      console.log(`   Last 200 chars: ${jsonText.substring(jsonText.length - 200)}`);
+
+      // Try extracting the outermost { ... } object
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error(`Could not find valid JSON object in Claude response. Parse error: ${parseErr}`);
+      }
+      try {
+        result = JSON.parse(jsonMatch[0]);
+      } catch {
+        // Last resort: try fixing common issues like trailing commas
+        const fixed = jsonMatch[0]
+          .replace(/,\s*([\]}])/g, '$1')  // trailing commas
+          .replace(/\n/g, ' ');           // newlines in strings
+        result = JSON.parse(fixed);
+      }
+    }
     console.log('✅ Successfully parsed response\n');
 
     // Validate groupings
