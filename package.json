@@ -1,6 +1,6 @@
 {
   "name": "claude-commands-reviewer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Intelligently aggregate and review Claude Code command permissions across projects to reduce approval fatigue",
   "type": "module",
   "bin": {
@@ -11,7 +11,23 @@
     "build": "tsc",
     "claude-commands": "tsx src/cli.ts"
   },
-  "keywords": ["claude", "claude-code", "command", "permission", "reviewer"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "cli",
+    "commands",
+    "permissions",
+    "reviewer",
+    "automation",
+    "developer-tools",
+    "productivity",
+    "ai",
+    "settings",
+    "approval",
+    "workflow",
+    "wildcard",
+    "session-management"
+  ],
   "author": "DreamTeam Mobile",
   "license": "MIT",
   "dependencies": {
