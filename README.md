@@ -117,6 +117,24 @@ The tool uses a comprehensive safety framework to prevent dangerous wildcards:
 3. **Apply**: Run `npx -y claude-commands-reviewer@latest apply review-*.json` to update global settings
 4. **Benefit**: All new Claude Code sessions automatically allow approved commands
 
+## Alternative Package Managers
+
+Using **Bun**:
+
+```bash
+bunx claude-commands-reviewer@latest collect
+bunx claude-commands-reviewer@latest review review-2025-10-23-183045.json
+bunx claude-commands-reviewer@latest apply review-2025-10-23-183045.json
+```
+
+Using **pnpm**:
+
+```bash
+pnpm dlx claude-commands-reviewer@latest collect
+pnpm dlx claude-commands-reviewer@latest review review-2025-10-23-183045.json
+pnpm dlx claude-commands-reviewer@latest apply review-2025-10-23-183045.json
+```
+
 ## Requirements
 
 - Node.js 22+
