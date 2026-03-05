@@ -93,12 +93,15 @@ function validateGrouping(pattern: string): boolean {
  * Validate that a grouping makes logical sense
  */
 function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: string } {
-  // Check 1: Pattern shouldn't appear in its own matches
+  // Check 1: Pattern shouldn't appear in its own matches — auto-fix by removing it
   if (grouping.matches.includes(grouping.pattern)) {
-    return {
-      valid: false,
-      reason: `Pattern "${grouping.pattern}" appears in its own matches - redundant grouping`
-    };
+    grouping.matches = grouping.matches.filter(m => m !== grouping.pattern);
+    if (grouping.matches.length === 0) {
+      return {
+        valid: false,
+        reason: `Pattern "${grouping.pattern}" only matched itself - no concrete commands to group`
+      };
+    }
   }
 
   // Check 1b: WebFetch patterns can't use wildcards in domain names
@@ -143,23 +146,23 @@ function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: s
       }
     }
 
-    // Also check that we're not mixing different executables/subcommands
-    const patternCmd = grouping.pattern.match(/Bash\(([^:)]+)/)?.[1]; // e.g., "pnpm run"
-    const commands = new Set<string>();
-
-    for (const match of grouping.matches) {
-      const matchCmd = match.match(/Bash\(([^:)]+)/)?.[1];
-      if (matchCmd) {
-        commands.add(matchCmd);
+    // Check that all matches start with the base command from the pattern
+    // e.g., pattern "Bash(pnpm:*)" → base "pnpm", so "pnpm install", "pnpm build" are all valid
+    const patternCmd = grouping.pattern.match(/Bash\(([^:)]+)/)?.[1]?.trim(); // e.g., "pnpm" or "pnpm run"
+    if (patternCmd) {
+      const invalidMatches: string[] = [];
+      for (const match of grouping.matches) {
+        const matchCmd = match.match(/Bash\(([^:)]+)/)?.[1]?.trim();
+        if (matchCmd && !matchCmd.startsWith(patternCmd)) {
+          invalidMatches.push(matchCmd);
+        }
       }
-    }
-
-    // All matches should have the same command as the pattern
-    if (commands.size > 1 || (patternCmd && commands.size > 0 && !commands.has(patternCmd))) {
-      return {
-        valid: false,
-        reason: `Pattern "${patternCmd}" but matches use different commands: ${Array.from(commands).join(', ')}`
-      };
+      if (invalidMatches.length > 0) {
+        return {
+          valid: false,
+          reason: `Pattern base "${patternCmd}" but some matches don't match: ${invalidMatches.join(', ')}`
+        };
+      }
     }
   }
 
@@ -167,7 +170,7 @@ function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: s
 }
 
 /**
- * Generate the Haiku prompt for command grouping
+ * Generate the prompt for command grouping
  */
 function generatePrompt(commands: CommandInfo[]): string {
   const commandsList = commands
@@ -420,7 +423,7 @@ async function callClaudeCLI(prompt: string): Promise<string> {
     const env = { ...process.env };
     delete env.CLAUDECODE;
 
-    const claude = spawn(claudePath, ['--model', 'sonnet', '--print'], {
+    const claude = spawn(claudePath, ['--model', 'opus', '--print'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env,
     });
@@ -465,13 +468,13 @@ async function callClaudeCLI(prompt: string): Promise<string> {
 }
 
 /**
- * Use Claude Haiku to intelligently group commands
+ * Use Claude Opus to intelligently group commands
  */
 export async function groupCommands(commands: CommandInfo[]): Promise<GroupingResult> {
   const prompt = generatePrompt(commands);
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🤖 Analyzing commands with Claude Sonnet...');
+  console.log('🤖 Analyzing commands with Claude Opus...');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   console.log(`📊 Total commands to analyze: ${commands.length}`);
@@ -487,7 +490,7 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
   }
 
   console.log('🔄 Calling Claude CLI...\n');
-  console.log('   Command: claude --model sonnet --print');
+  console.log('   Command: claude --model opus --print');
   console.log('   Waiting for response...\n');
 
   try {
@@ -594,7 +597,7 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
 
     return result;
   } catch (error) {
-    console.error('Error calling Claude Haiku:', error);
+    console.error('Error calling Claude Opus:', error);
     throw error;
   }
 }

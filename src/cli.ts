@@ -117,7 +117,7 @@ async function collectCommands(reset = false) {
     return;
   }
 
-  // Group with Haiku
+  // Group with Opus
   const groupingResult = await groupCommands(aggregated.allowedCommands);
 
   console.log(`\n✓ Suggested ${groupingResult.groupings.length} command grouping${groupingResult.groupings.length !== 1 ? 's' : ''}`);
