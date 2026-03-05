@@ -1,7 +1,5 @@
 # Claude Commands Reviewer
 
-[![npm version](https://img.shields.io/npm/v/claude-commands-reviewer)](https://www.npmjs.com/package/claude-commands-reviewer)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **Stop approving the same commands over and over.** Claude Commands Reviewer scans your Claude Code sessions, intelligently groups safe commands using AI, and applies them to your global settings — so every new session starts pre-approved.
 
