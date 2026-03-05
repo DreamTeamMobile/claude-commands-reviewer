@@ -7,8 +7,8 @@ import { join } from 'path';
 import type { CommandInfo, GroupingResult, Grouping } from './types.js';
 
 const NEVER_WILDCARD_PATTERNS = [
-  /rm\s+/,
-  /del\s+/,
+  /^rm(\s|$)/,
+  /^del(\s|$)/,
   /--force/,
   /--hard/,
   /chmod/,
@@ -64,7 +64,7 @@ function validateMCPGrouping(pattern: string): { valid: boolean; reason?: string
 /**
  * Validate that a grouping pattern is safe
  */
-function validateGrouping(pattern: string): boolean {
+export function validateGrouping(pattern: string): boolean {
   // Validate MCP patterns
   const mcpValidation = validateMCPGrouping(pattern);
   if (!mcpValidation.valid) {
@@ -92,7 +92,7 @@ function validateGrouping(pattern: string): boolean {
 /**
  * Validate that a grouping makes logical sense
  */
-function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: string } {
+export function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: string } {
   // Check 1: Pattern shouldn't appear in its own matches — auto-fix by removing it
   if (grouping.matches.includes(grouping.pattern)) {
     grouping.matches = grouping.matches.filter(m => m !== grouping.pattern);
@@ -172,7 +172,7 @@ function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: s
 /**
  * Generate the prompt for command grouping
  */
-function generatePrompt(commands: CommandInfo[]): string {
+export function generatePrompt(commands: CommandInfo[]): string {
   const commandsList = commands
     .map(c => `- ${c.command} (used in ${c.projects.length} project${c.projects.length > 1 ? 's' : ''})`)
     .join('\n');
@@ -301,6 +301,21 @@ SAFETY FRAMEWORK:
 
 6. **GROUPING LOGIC**:
 
+   **Group at SUBCOMMAND level (2nd argument), not tool level**:
+   - The wildcard :* should replace the ARGUMENTS, not the subcommand
+   - Create SEPARATE groups for each subcommand of the same tool
+   - Example: "gh pr list", "gh pr view", "gh pr create" → "Bash(gh pr:*)"
+   - Example: "gh run list", "gh run view" → "Bash(gh run:*)"
+   - Example: "git log --oneline", "git log --all" → "Bash(git log:*)"
+   - Example: "git diff HEAD", "git diff --cached" → "Bash(git diff:*)"
+
+   **Create MULTIPLE separate groups when a tool has different subcommands**:
+   - If you see "gh pr list", "gh pr view", "gh run list", "gh run view"
+     → Create TWO groups: "Bash(gh pr:*)" AND "Bash(gh run:*)"
+   - If you see "git log --oneline", "git diff HEAD", "git status"
+     → Create separate groups: "Bash(git log:*)", "Bash(git diff:*)", "Bash(git status:*)"
+   - Do NOT collapse these into a single overly broad pattern like "Bash(gh:*)" or "Bash(git:*)"
+
    **Can be grouped if**:
    - ALL commands have the EXACT same prefix before :*
    - Example: "Bash(npm run test)", "Bash(npm run build)", "Bash(npm run lint)" → "Bash(npm run:*)"
@@ -312,7 +327,7 @@ SAFETY FRAMEWORK:
    - Different subcommands (pnpm run vs pnpm test vs pnpm build)
    - Any command is destructive
    - WebFetch domains - NEVER group (no wildcard support)
-   - Pattern would be too broad
+   - Pattern would be too broad (e.g., "Bash(gh:*)" instead of "Bash(gh pr:*)")
 
 7. **CRITICAL VALIDATION CHECKS**:
    - ❌ NEVER include the pattern itself in the matches array
@@ -477,8 +492,9 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
   console.log('🤖 Analyzing commands with Claude Opus...');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
+  const promptTokensEstimate = Math.ceil(prompt.length / 4); // rough estimate: ~4 chars per token
   console.log(`📊 Total commands to analyze: ${commands.length}`);
-  console.log(`📝 Prompt length: ${prompt.length} characters`);
+  console.log(`📝 Prompt: ${prompt.length} chars (~${promptTokensEstimate.toLocaleString()} tokens)`);
 
   // Show first few commands as sample
   console.log(`\n📋 Sample commands (first 5):`);
@@ -496,8 +512,14 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
   try {
     const response = await callClaudeCLI(prompt);
 
+    const responseTokensEstimate = Math.ceil(response.length / 4);
+    const inputCost = promptTokensEstimate * 15 / 1_000_000;  // Opus: $15/MTok input
+    const outputCost = responseTokensEstimate * 75 / 1_000_000; // Opus: $75/MTok output
+    const totalCost = inputCost + outputCost;
+
     console.log('✅ Received response from Claude');
-    console.log(`📏 Response length: ${response.length} characters\n`);
+    console.log(`📏 Response: ${response.length} chars (~${responseTokensEstimate.toLocaleString()} tokens)`);
+    console.log(`💰 Estimated cost: $${totalCost.toFixed(4)} (in: $${inputCost.toFixed(4)}, out: $${outputCost.toFixed(4)})\n`);
 
     // Parse the JSON response
     let jsonText = response.trim();

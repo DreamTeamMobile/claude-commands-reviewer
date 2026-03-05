@@ -17,6 +17,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "build": "tsc",
     "claude-commands": "tsx src/cli.ts"
   },
