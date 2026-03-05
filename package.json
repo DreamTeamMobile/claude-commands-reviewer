@@ -1,8 +1,13 @@
 {
   "name": "claude-commands-reviewer",
-  "version": "0.2.0",
+  "version": "0.0.1",
   "description": "Intelligently aggregate and review Claude Code command permissions across projects to reduce approval fatigue",
   "type": "module",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "claude-commands": "./src/cli.ts"
   },
