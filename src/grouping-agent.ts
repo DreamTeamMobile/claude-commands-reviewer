@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -384,14 +384,30 @@ async function callClaudeCLI(prompt: string): Promise<string> {
     const claudePaths = [
       process.env.CLAUDE_CLI_PATH,
       join(homedir(), '.claude', 'local', 'claude'),
+      join(homedir(), '.local', 'bin', 'claude'),
+      '/usr/local/bin/claude',
       'claude', // fallback to PATH
     ].filter(Boolean) as string[];
 
     let claudePath: string | null = null;
-    for (const path of claudePaths) {
-      if (existsSync(path)) {
-        claudePath = path;
+    for (const p of claudePaths) {
+      if (existsSync(p)) {
+        claudePath = p;
         break;
+      }
+    }
+
+    // If no absolute path found, try resolving 'claude' via which/where
+    if (!claudePath) {
+      try {
+        const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+        const result = spawnSync(whichCmd, ['claude'], { encoding: 'utf-8' });
+        const resolved = result.stdout?.trim();
+        if (resolved && existsSync(resolved)) {
+          claudePath = resolved;
+        }
+      } catch {
+        // which/where failed
       }
     }
 
@@ -400,8 +416,13 @@ async function callClaudeCLI(prompt: string): Promise<string> {
       return;
     }
 
+    // Clear CLAUDECODE env var to allow spawning claude from within a Claude Code session
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
     const claude = spawn(claudePath, ['--model', 'sonnet', '--print'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env,
     });
 
     let stdout = '';
