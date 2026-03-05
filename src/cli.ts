@@ -14,12 +14,43 @@ import type { ReviewFile } from './types.js';
 const REPO_ROOT = process.cwd();
 const HISTORY_FILE = join(REPO_ROOT, 'history', 'command-approvals.md');
 
+/**
+ * Detect how the CLI was invoked and return the appropriate command prefix.
+ * e.g. "npx claude-commands-reviewer", "bunx claude-commands-reviewer",
+ *      "pnpm exec claude-commands", "claude-commands", "tsx src/cli.ts"
+ */
+function getCliName(): string {
+  const argv1 = process.argv[1] ?? '';
+
+  // Running via npx/bunx/pnpm — argv[1] is the bin script path
+  if (argv1.includes('node_modules/.bin/claude-commands')) {
+    // Detect the package manager from npm_execpath or npm_config_user_agent
+    const userAgent = process.env.npm_config_user_agent ?? '';
+    if (userAgent.startsWith('pnpm')) return 'pnpm exec claude-commands';
+    if (userAgent.startsWith('bun')) return 'bunx claude-commands-reviewer';
+    if (userAgent.startsWith('yarn')) return 'yarn claude-commands';
+    return 'npx claude-commands-reviewer';
+  }
+
+  // Running via npx cache (e.g. /Users/.../.npm/_npx/.../claude-commands-reviewer/src/cli.ts)
+  if (argv1.includes('_npx') || argv1.includes('npx')) return 'npx claude-commands-reviewer';
+
+  // Running directly as global install
+  if (argv1.endsWith('/claude-commands') || argv1.endsWith('\\claude-commands')) return 'claude-commands';
+
+  // Running via tsx/node dev mode
+  if (argv1.includes('src/cli.ts')) return 'npx tsx src/cli.ts';
+
+  return 'claude-commands';
+}
+
 async function showHelp() {
+  const cli = getCliName();
   console.log(`
 Claude Commands - Manage multiple Claude Code sessions
 
 USAGE:
-  claude-commands <command>
+  ${cli} <command>
 
 COMMANDS:
   list              List all active Claude Code sessions grouped by project
@@ -30,11 +61,11 @@ COMMANDS:
   help              Show this help message
 
 EXAMPLES:
-  claude-commands list
-  claude-commands collect
-  claude-commands collect --reset
-  claude-commands review review-2025-10-23-183045.json
-  claude-commands apply review-2025-10-23-183045.json
+  ${cli} list
+  ${cli} collect
+  ${cli} collect --reset
+  ${cli} review review-2025-10-23-183045.json
+  ${cli} apply review-2025-10-23-183045.json
 
 REQUIREMENTS:
   Claude Code CLI must be installed and authenticated
@@ -118,10 +149,11 @@ async function collectCommands(reset = false) {
   state.lastCollectRun = now.toISOString();
   await writeState(state);
 
+  const cli = getCliName();
   console.log(`\nNext steps:`);
-  console.log(`1. Review commands interactively: claude-commands review ${reviewFileName}`);
+  console.log(`1. Review commands interactively: ${cli} review ${reviewFileName}`);
   console.log(`   OR manually edit ${reviewFileName} and set "approved": true/false`);
-  console.log(`2. Apply approved commands: claude-commands apply ${reviewFileName}`);
+  console.log(`2. Apply approved commands: ${cli} apply ${reviewFileName}`);
 }
 
 async function applyCommands(reviewFileName: string) {
@@ -182,17 +214,17 @@ async function main() {
       const reviewFileToReview = args[1];
       if (!reviewFileToReview) {
         console.error('Error: Please provide a review file path');
-        console.error('Usage: claude-commands review <review-file>');
+        console.error(`Usage: ${getCliName()} review <review-file>`);
         process.exit(1);
       }
-      await interactiveReview(join(REPO_ROOT, reviewFileToReview));
+      await interactiveReview(join(REPO_ROOT, reviewFileToReview), getCliName());
       break;
 
     case 'apply':
       const reviewFile = args[1];
       if (!reviewFile) {
         console.error('Error: Please provide a review file path');
-        console.error('Usage: claude-commands apply <review-file>');
+        console.error(`Usage: ${getCliName()} apply <review-file>`);
         process.exit(1);
       }
       await applyCommands(reviewFile);
@@ -200,7 +232,7 @@ async function main() {
 
     default:
       console.error(`Unknown command: ${command}`);
-      console.error('Run "claude-commands help" for usage information');
+      console.error(`Run "${getCliName()} help" for usage information`);
       process.exit(1);
   }
 }

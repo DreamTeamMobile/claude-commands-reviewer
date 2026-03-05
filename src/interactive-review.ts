@@ -116,7 +116,7 @@ function displayGrouping(item: ReviewItem, current: number, total: number) {
 /**
  * Interactive review of commands
  */
-export async function interactiveReview(reviewFilePath: string): Promise<void> {
+export async function interactiveReview(reviewFilePath: string, cliName = 'claude-commands'): Promise<void> {
   // Read review file
   const content = await readFile(reviewFilePath, 'utf-8');
   const reviewFile: ReviewFile = JSON.parse(content);
@@ -276,7 +276,7 @@ export async function interactiveReview(reviewFilePath: string): Promise<void> {
       console.log(`   ❌ Denied: ${deniedCount}`);
       console.log(`   ⏸️  Skipped: ${skippedCount}`);
       console.log(`\n📁 File: ${reviewFilePath}`);
-      console.log(`\n💡 Next step: Run "claude-commands apply ${reviewFilePath.split('/').pop()}"\n`);
+      console.log(`\n💡 Next step: Run "${cliName} apply ${reviewFilePath.split('/').pop()}"\n`);
 
       process.exit(0);
     }
