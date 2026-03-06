@@ -79,6 +79,16 @@ export async function writeUserSettings(settings: ProjectSettings): Promise<void
       console.log(`✓ Backup created: ${backupFile}`);
     }
 
+    // Dedupe and sort permission lists before writing
+    if (settings.permissions) {
+      for (const key of ['allow', 'deny', 'ask'] as const) {
+        const list = settings.permissions[key];
+        if (Array.isArray(list)) {
+          settings.permissions[key] = [...new Set(list)].sort();
+        }
+      }
+    }
+
     // Write new settings
     await writeFile(USER_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
     console.log(`✓ Updated: ${USER_SETTINGS_FILE}`);
