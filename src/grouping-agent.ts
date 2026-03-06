@@ -390,7 +390,12 @@ OUTPUT FORMAT (strict JSON):
 }
 
 Be conservative. When in doubt, don't group. User safety is paramount.
-Only return valid JSON, no markdown formatting or code blocks.`;
+
+CRITICAL OUTPUT RULES:
+- Return ONLY valid JSON, no markdown formatting, no code blocks, no commentary
+- Keep "reasoning" strings SHORT (1 sentence max)
+- Do NOT explain your thought process outside the JSON
+- The response MUST be a single complete JSON object that fits within output limits`;
 }
 
 /**
@@ -561,6 +566,18 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
       }
     }
     console.log('✅ Successfully parsed response\n');
+
+    // Ensure required fields exist
+    if (!Array.isArray(result.groupings)) result.groupings = [];
+    if (!Array.isArray(result.ungrouped)) result.ungrouped = [];
+    if (!result.statistics) {
+      result.statistics = {
+        totalCommands: commands.length,
+        grouped: result.groupings.reduce((sum, g) => sum + g.matches.length, 0),
+        ungrouped: result.ungrouped.length,
+        categoryCounts: { SAFE_TO_WILDCARD: 0, MAYBE_SAFE: 0, NEVER_WILDCARD: 0 },
+      };
+    }
 
     // Validate groupings
     console.log('🛡️  Validating groupings for safety and logic...');
