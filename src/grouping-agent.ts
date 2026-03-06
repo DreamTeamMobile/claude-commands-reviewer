@@ -392,10 +392,12 @@ OUTPUT FORMAT (strict JSON):
 Be conservative. When in doubt, don't group. User safety is paramount.
 
 CRITICAL OUTPUT RULES:
-- Return ONLY valid JSON, no markdown formatting, no code blocks, no commentary
-- Keep "reasoning" strings SHORT (1 sentence max)
-- Do NOT explain your thought process outside the JSON
-- The response MUST be a single complete JSON object that fits within output limits`;
+- Return ONLY valid JSON — no markdown, no code blocks, no commentary, no text before or after
+- Keep "reasoning" strings to 10 words or fewer
+- NEVER split the response into multiple parts or ask to continue
+- Return ALL groupings AND ALL ungrouped items in ONE single JSON object
+- If there are many ungrouped commands, still include them all — do not truncate or offer to continue
+- The entire response must be parseable as a single JSON.parse() call`;
 }
 
 /**
