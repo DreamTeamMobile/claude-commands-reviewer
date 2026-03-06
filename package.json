@@ -1,6 +1,6 @@
 {
   "name": "claude-commands-reviewer",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "repository": {
     "type": "git",
     "url": "https://github.com/DreamTeamMobile/claude-commands-reviewer"
@@ -17,6 +17,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "build": "tsc",
     "claude-commands": "tsx src/cli.ts"
   },

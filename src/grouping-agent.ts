@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import type { CommandInfo, GroupingResult, Grouping } from './types.js';
 
 const NEVER_WILDCARD_PATTERNS = [
-  /rm\s+/,
-  /del\s+/,
+  /^rm(\s|$)/,
+  /^del(\s|$)/,
   /--force/,
   /--hard/,
   /chmod/,
@@ -64,7 +64,7 @@ function validateMCPGrouping(pattern: string): { valid: boolean; reason?: string
 /**
  * Validate that a grouping pattern is safe
  */
-function validateGrouping(pattern: string): boolean {
+export function validateGrouping(pattern: string): boolean {
   // Validate MCP patterns
   const mcpValidation = validateMCPGrouping(pattern);
   if (!mcpValidation.valid) {
@@ -92,13 +92,16 @@ function validateGrouping(pattern: string): boolean {
 /**
  * Validate that a grouping makes logical sense
  */
-function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: string } {
-  // Check 1: Pattern shouldn't appear in its own matches
+export function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: string } {
+  // Check 1: Pattern shouldn't appear in its own matches — auto-fix by removing it
   if (grouping.matches.includes(grouping.pattern)) {
-    return {
-      valid: false,
-      reason: `Pattern "${grouping.pattern}" appears in its own matches - redundant grouping`
-    };
+    grouping.matches = grouping.matches.filter(m => m !== grouping.pattern);
+    if (grouping.matches.length === 0) {
+      return {
+        valid: false,
+        reason: `Pattern "${grouping.pattern}" only matched itself - no concrete commands to group`
+      };
+    }
   }
 
   // Check 1b: WebFetch patterns can't use wildcards in domain names
@@ -143,23 +146,23 @@ function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: s
       }
     }
 
-    // Also check that we're not mixing different executables/subcommands
-    const patternCmd = grouping.pattern.match(/Bash\(([^:)]+)/)?.[1]; // e.g., "pnpm run"
-    const commands = new Set<string>();
-
-    for (const match of grouping.matches) {
-      const matchCmd = match.match(/Bash\(([^:)]+)/)?.[1];
-      if (matchCmd) {
-        commands.add(matchCmd);
+    // Check that all matches start with the base command from the pattern
+    // e.g., pattern "Bash(pnpm:*)" → base "pnpm", so "pnpm install", "pnpm build" are all valid
+    const patternCmd = grouping.pattern.match(/Bash\(([^:)]+)/)?.[1]?.trim(); // e.g., "pnpm" or "pnpm run"
+    if (patternCmd) {
+      const invalidMatches: string[] = [];
+      for (const match of grouping.matches) {
+        const matchCmd = match.match(/Bash\(([^:)]+)/)?.[1]?.trim();
+        if (matchCmd && !matchCmd.startsWith(patternCmd)) {
+          invalidMatches.push(matchCmd);
+        }
       }
-    }
-
-    // All matches should have the same command as the pattern
-    if (commands.size > 1 || (patternCmd && commands.size > 0 && !commands.has(patternCmd))) {
-      return {
-        valid: false,
-        reason: `Pattern "${patternCmd}" but matches use different commands: ${Array.from(commands).join(', ')}`
-      };
+      if (invalidMatches.length > 0) {
+        return {
+          valid: false,
+          reason: `Pattern base "${patternCmd}" but some matches don't match: ${invalidMatches.join(', ')}`
+        };
+      }
     }
   }
 
@@ -167,9 +170,9 @@ function validateGroupingLogic(grouping: Grouping): { valid: boolean; reason?: s
 }
 
 /**
- * Generate the Haiku prompt for command grouping
+ * Generate the prompt for command grouping
  */
-function generatePrompt(commands: CommandInfo[]): string {
+export function generatePrompt(commands: CommandInfo[]): string {
   const commandsList = commands
     .map(c => `- ${c.command} (used in ${c.projects.length} project${c.projects.length > 1 ? 's' : ''})`)
     .join('\n');
@@ -298,6 +301,21 @@ SAFETY FRAMEWORK:
 
 6. **GROUPING LOGIC**:
 
+   **Group at SUBCOMMAND level (2nd argument), not tool level**:
+   - The wildcard :* should replace the ARGUMENTS, not the subcommand
+   - Create SEPARATE groups for each subcommand of the same tool
+   - Example: "gh pr list", "gh pr view", "gh pr create" → "Bash(gh pr:*)"
+   - Example: "gh run list", "gh run view" → "Bash(gh run:*)"
+   - Example: "git log --oneline", "git log --all" → "Bash(git log:*)"
+   - Example: "git diff HEAD", "git diff --cached" → "Bash(git diff:*)"
+
+   **Create MULTIPLE separate groups when a tool has different subcommands**:
+   - If you see "gh pr list", "gh pr view", "gh run list", "gh run view"
+     → Create TWO groups: "Bash(gh pr:*)" AND "Bash(gh run:*)"
+   - If you see "git log --oneline", "git diff HEAD", "git status"
+     → Create separate groups: "Bash(git log:*)", "Bash(git diff:*)", "Bash(git status:*)"
+   - Do NOT collapse these into a single overly broad pattern like "Bash(gh:*)" or "Bash(git:*)"
+
    **Can be grouped if**:
    - ALL commands have the EXACT same prefix before :*
    - Example: "Bash(npm run test)", "Bash(npm run build)", "Bash(npm run lint)" → "Bash(npm run:*)"
@@ -309,7 +327,7 @@ SAFETY FRAMEWORK:
    - Different subcommands (pnpm run vs pnpm test vs pnpm build)
    - Any command is destructive
    - WebFetch domains - NEVER group (no wildcard support)
-   - Pattern would be too broad
+   - Pattern would be too broad (e.g., "Bash(gh:*)" instead of "Bash(gh pr:*)")
 
 7. **CRITICAL VALIDATION CHECKS**:
    - ❌ NEVER include the pattern itself in the matches array
@@ -372,7 +390,14 @@ OUTPUT FORMAT (strict JSON):
 }
 
 Be conservative. When in doubt, don't group. User safety is paramount.
-Only return valid JSON, no markdown formatting or code blocks.`;
+
+CRITICAL OUTPUT RULES:
+- Return ONLY valid JSON — no markdown, no code blocks, no commentary, no text before or after
+- Keep "reasoning" strings to 10 words or fewer
+- NEVER split the response into multiple parts or ask to continue
+- Return ALL groupings AND ALL ungrouped items in ONE single JSON object
+- If there are many ungrouped commands, still include them all — do not truncate or offer to continue
+- The entire response must be parseable as a single JSON.parse() call`;
 }
 
 /**
@@ -384,14 +409,30 @@ async function callClaudeCLI(prompt: string): Promise<string> {
     const claudePaths = [
       process.env.CLAUDE_CLI_PATH,
       join(homedir(), '.claude', 'local', 'claude'),
+      join(homedir(), '.local', 'bin', 'claude'),
+      '/usr/local/bin/claude',
       'claude', // fallback to PATH
     ].filter(Boolean) as string[];
 
     let claudePath: string | null = null;
-    for (const path of claudePaths) {
-      if (existsSync(path)) {
-        claudePath = path;
+    for (const p of claudePaths) {
+      if (existsSync(p)) {
+        claudePath = p;
         break;
+      }
+    }
+
+    // If no absolute path found, try resolving 'claude' via which/where
+    if (!claudePath) {
+      try {
+        const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+        const result = spawnSync(whichCmd, ['claude'], { encoding: 'utf-8' });
+        const resolved = result.stdout?.trim();
+        if (resolved && existsSync(resolved)) {
+          claudePath = resolved;
+        }
+      } catch {
+        // which/where failed
       }
     }
 
@@ -400,8 +441,13 @@ async function callClaudeCLI(prompt: string): Promise<string> {
       return;
     }
 
-    const claude = spawn(claudePath, ['--model', 'sonnet', '--print'], {
+    // Clear CLAUDECODE env var to allow spawning claude from within a Claude Code session
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
+    const claude = spawn(claudePath, ['--model', 'opus', '--print'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env,
     });
 
     let stdout = '';
@@ -444,17 +490,18 @@ async function callClaudeCLI(prompt: string): Promise<string> {
 }
 
 /**
- * Use Claude Haiku to intelligently group commands
+ * Use Claude Opus to intelligently group commands
  */
 export async function groupCommands(commands: CommandInfo[]): Promise<GroupingResult> {
   const prompt = generatePrompt(commands);
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🤖 Analyzing commands with Claude Sonnet...');
+  console.log('🤖 Analyzing commands with Claude Opus...');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
+  const promptTokensEstimate = Math.ceil(prompt.length / 4); // rough estimate: ~4 chars per token
   console.log(`📊 Total commands to analyze: ${commands.length}`);
-  console.log(`📝 Prompt length: ${prompt.length} characters`);
+  console.log(`📝 Prompt: ${prompt.length} chars (~${promptTokensEstimate.toLocaleString()} tokens)`);
 
   // Show first few commands as sample
   console.log(`\n📋 Sample commands (first 5):`);
@@ -466,14 +513,20 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
   }
 
   console.log('🔄 Calling Claude CLI...\n');
-  console.log('   Command: claude --model sonnet --print');
+  console.log('   Command: claude --model opus --print');
   console.log('   Waiting for response...\n');
 
   try {
     const response = await callClaudeCLI(prompt);
 
+    const responseTokensEstimate = Math.ceil(response.length / 4);
+    const inputCost = promptTokensEstimate * 15 / 1_000_000;  // Opus: $15/MTok input
+    const outputCost = responseTokensEstimate * 75 / 1_000_000; // Opus: $75/MTok output
+    const totalCost = inputCost + outputCost;
+
     console.log('✅ Received response from Claude');
-    console.log(`📏 Response length: ${response.length} characters\n`);
+    console.log(`📏 Response: ${response.length} chars (~${responseTokensEstimate.toLocaleString()} tokens)`);
+    console.log(`💰 Estimated cost: $${totalCost.toFixed(4)} (in: $${inputCost.toFixed(4)}, out: $${outputCost.toFixed(4)})\n`);
 
     // Parse the JSON response
     let jsonText = response.trim();
@@ -490,8 +543,43 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
     }
 
     console.log('   Parsing JSON...');
-    const result: GroupingResult = JSON.parse(jsonText);
+    let result: GroupingResult;
+    try {
+      result = JSON.parse(jsonText);
+    } catch (parseErr) {
+      // Try to extract JSON object from response (Claude may include extra text)
+      console.log('   ⚠️  Direct parse failed, attempting JSON extraction...');
+      console.log(`   First 200 chars: ${jsonText.substring(0, 200)}`);
+      console.log(`   Last 200 chars: ${jsonText.substring(jsonText.length - 200)}`);
+
+      // Try extracting the outermost { ... } object
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error(`Could not find valid JSON object in Claude response. Parse error: ${parseErr}`);
+      }
+      try {
+        result = JSON.parse(jsonMatch[0]);
+      } catch {
+        // Last resort: try fixing common issues like trailing commas
+        const fixed = jsonMatch[0]
+          .replace(/,\s*([\]}])/g, '$1')  // trailing commas
+          .replace(/\n/g, ' ');           // newlines in strings
+        result = JSON.parse(fixed);
+      }
+    }
     console.log('✅ Successfully parsed response\n');
+
+    // Ensure required fields exist
+    if (!Array.isArray(result.groupings)) result.groupings = [];
+    if (!Array.isArray(result.ungrouped)) result.ungrouped = [];
+    if (!result.statistics) {
+      result.statistics = {
+        totalCommands: commands.length,
+        grouped: result.groupings.reduce((sum, g) => sum + g.matches.length, 0),
+        ungrouped: result.ungrouped.length,
+        categoryCounts: { SAFE_TO_WILDCARD: 0, MAYBE_SAFE: 0, NEVER_WILDCARD: 0 },
+      };
+    }
 
     // Validate groupings
     console.log('🛡️  Validating groupings for safety and logic...');
@@ -550,7 +638,7 @@ export async function groupCommands(commands: CommandInfo[]): Promise<GroupingRe
 
     return result;
   } catch (error) {
-    console.error('Error calling Claude Haiku:', error);
+    console.error('Error calling Claude Opus:', error);
     throw error;
   }
 }
