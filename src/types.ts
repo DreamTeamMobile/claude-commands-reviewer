@@ -80,7 +80,9 @@ export interface ProjectSettings {
     allow?: string[];
     deny?: string[];
     ask?: string[];
+    [key: string]: unknown;
   };
+  [key: string]: unknown;
 }
 
 export interface JSONLEntry {
