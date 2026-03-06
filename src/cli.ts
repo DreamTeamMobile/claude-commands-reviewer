@@ -177,7 +177,8 @@ async function applyCommands(reviewFileName: string) {
   const totalApproved = addedPatterns.length + addedCommands.length;
 
   if (totalApproved === 0) {
-    console.log('\nNo new commands were approved or all were already in settings.');
+    console.log('\nNo new commands to add (all already in settings).');
+    console.log('✓ Settings deduped and sorted.');
     return;
   }
 
