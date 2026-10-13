@@ -172,7 +172,14 @@ async function applyCommands(reviewFileName: string) {
   }
 
   // Apply to user settings
-  const { addedPatterns, addedCommands } = await applyReviewFile(reviewFile);
+  let addedPatterns: string[];
+  let addedCommands: string[];
+  try {
+    ({ addedPatterns, addedCommands } = await applyReviewFile(reviewFile));
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
+  }
 
   const totalApproved = addedPatterns.length + addedCommands.length;
 

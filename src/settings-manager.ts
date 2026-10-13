@@ -41,29 +41,43 @@ export async function writeState(state: OrchestratorState): Promise<void> {
 
 /**
  * Read user settings from ~/.claude/settings.json
+ *
+ * Throws if the file exists but cannot be read or parsed. Falling back to
+ * empty settings here would make applyReviewFile overwrite the user's file
+ * (model, env, hooks, existing permissions) with only the new approvals.
  */
 export async function readUserSettings(): Promise<ProjectSettings> {
   if (!existsSync(USER_SETTINGS_FILE)) {
     return { permissions: { allow: [], deny: [], ask: [] } };
   }
 
+  let settings: ProjectSettings;
   try {
     const content = await readFile(USER_SETTINGS_FILE, 'utf-8');
-    const settings = JSON.parse(content);
-
-    // Ensure permissions structure exists
-    if (!settings.permissions) {
-      settings.permissions = { allow: [], deny: [], ask: [] };
-    }
-    if (!settings.permissions.allow) {
-      settings.permissions.allow = [];
-    }
-
-    return settings;
+    settings = JSON.parse(content);
   } catch (error) {
-    console.error('Error reading user settings:', error);
-    return { permissions: { allow: [], deny: [], ask: [] } };
+    throw new Error(
+      `Could not read ${USER_SETTINGS_FILE}: ${error instanceof Error ? error.message : error}. ` +
+        'Fix the file and try again; it has not been modified.'
+    );
   }
+
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
+    throw new Error(
+      `Could not read ${USER_SETTINGS_FILE}: expected a JSON object. ` +
+        'Fix the file and try again; it has not been modified.'
+    );
+  }
+
+  // Ensure permissions structure exists
+  if (!settings.permissions) {
+    settings.permissions = { allow: [], deny: [], ask: [] };
+  }
+  if (!settings.permissions.allow) {
+    settings.permissions.allow = [];
+  }
+
+  return settings;
 }
 
 /**
